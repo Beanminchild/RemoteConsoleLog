@@ -26,7 +26,7 @@ def send_slack_notification(message, webhook):
     except requests.exceptions.RequestException as e:
         print(f"Failed to send Slack notification: {e}")
 
-def monitor_process(process_name, usersWebhook):
+def monitor_process(process_name, usersWebhook,output_text_box):
     """Monitor a specific process and send Slack notifications."""
     monitored_processes = {}
 
@@ -51,6 +51,11 @@ def monitor_process(process_name, usersWebhook):
                             f"Script: {script_name}",
                             usersWebhook
                         )
+                        # Update the GUI text box
+                        output_text_box.config(state=tk.NORMAL)  # Make it editable
+                        output_text_box.insert(tk.END, f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
+                            f"Script: {script_name}\n")
+                        
 
             # Check if any monitored processes have finished
             finished_pids = []
@@ -61,7 +66,7 @@ def monitor_process(process_name, usersWebhook):
                     try:
                         # Check if the process finished gracefully or errored out
                         exit_code = proc.wait(timeout=1)  # Wait for the process to terminate
-                        status = "gracefully" if exit_code == 0 else f"with error code {exit_code}"
+                        status = "gracefully" if exit_code == 0 or 'None' else f"with error code {exit_code}"
                     except psutil.TimeoutExpired:
                         status = "with an unknown status (timeout while waiting for exit code)"
 
@@ -85,7 +90,7 @@ def monitor_process(process_name, usersWebhook):
         send_slack_notification(usersWebhook,f"Error while monitoring process: {e}")
         print(f"Error while monitoring process: {e}")
 
-def start_process_monitoring(process_name, webhook):
+def start_process_monitoring(process_name, webhook, output_text_box):
     """Start monitoring the specified process."""
     if not process_name:
         messagebox.showerror("Error", "No process name specified!")
@@ -104,7 +109,7 @@ def start_process_monitoring(process_name, webhook):
         return
 
     # Run the process monitoring in a separate thread to avoid blocking the GUI
-    threading.Thread(target=monitor_process, args=(process_name, webhook), daemon=True).start()
+    threading.Thread(target=monitor_process, args=(process_name, webhook,output_text_box), daemon=True).start()
 
 
 def save_config(process_name, webhook):
@@ -128,7 +133,7 @@ def load_config():
 def create_gui():
     """Create the tkinter GUI."""
     root = tk.Tk()
-    root.title("Telepathic Sentinal")
+    root.title("Remote Console Log")
 
     config = load_config()
 
@@ -144,13 +149,22 @@ def create_gui():
     webhook_entry.grid(row=1, column=1, padx=10, pady=10)
     webhook_entry.insert(0, config.get("webhook", ""))  # Placeholder text
 
+    # Create a text box
+    output_text_box = tk.Text(root, height=5, width=50)
+    output_text_box.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
+    output_text_box.insert(tk.END, "Slack updates will also be displayed here...")
+    output_text_box.config(state=tk.DISABLED)  # Make it read-only
+    
+
+
+
     # Start button
     tk.Button(
         root,
         text="Start Monitoring",
         command=lambda: [
             save_config(process_entry.get(), webhook_entry.get()),  # Save values on button press
-            start_process_monitoring(process_entry.get(), webhook_entry.get())
+            start_process_monitoring(process_entry.get(), webhook_entry.get(), output_text_box)
         ],
 
     ).grid(row=2, column=0, columnspan=2, pady=20)
