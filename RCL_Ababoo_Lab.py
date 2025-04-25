@@ -52,6 +52,7 @@ def monitor_process(process_name, usersWebhook,output_text_box):
                             usersWebhook
                         )
                         # Update the GUI text box
+                        output_text_box.delete(1.0, 5.0) # clear oldest message
                         output_text_box.config(state=tk.NORMAL)  # Make it editable
                         output_text_box.insert(tk.END, f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
                             f"Script: {script_name}\n")
@@ -79,7 +80,14 @@ def monitor_process(process_name, usersWebhook,output_text_box):
                         f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
                         f"Script: {script_name}"
                     )
+                    # Update the GUI text box
+                    output_text_box.delete(1.0, 5.0) # clear oldest message
+                    output_text_box.config(state=tk.NORMAL)  # Make it editable
+                    output_text_box.insert(tk.END, f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
+                        f"Script: {script_name}\n")
                     finished_pids.append(pid)
+                    
+                    
 
             # Remove finished processes from the monitored list
             for pid in finished_pids:
@@ -150,7 +158,7 @@ def create_gui():
     webhook_entry.insert(0, config.get("webhook", ""))  # Placeholder text
 
     # Create a text box
-    output_text_box = tk.Text(root, height=5, width=50)
+    output_text_box = tk.Text(root, height=5, width=50, wrap="word")
     output_text_box.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
     output_text_box.insert(tk.END, "Slack updates will also be displayed here...")
     output_text_box.config(state=tk.DISABLED)  # Make it read-only
