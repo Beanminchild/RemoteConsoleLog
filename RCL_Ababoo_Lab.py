@@ -27,112 +27,73 @@ def send_slack_notification(message, webhook):
         print(f"Failed to send Slack notification: {e}")
 
 def monitor_process(process_name, usersWebhook, output_text_box):
-    """Monitor a specific process or its child processes (e.g., RStudio and Rscript)."""
+    """Monitor a specific process and send Slack notifications."""
     monitored_processes = {}
 
     try:
         while True:
-            # Check if the user is monitoring RStudio
-            if process_name.lower() == "rstudio":
-                # Look for the RStudio process
-                rstudio_process = None
-                for proc in psutil.process_iter(['pid', 'name']):
-                    if proc.info['name'] and 'rstudio' in proc.info['name'].lower():
-                        rstudio_process = proc
-                        break
+            # Check for the specified process
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                if proc.info['name'] and proc.info['name'].lower() == process_name.lower():  # Perform exact match
+                     # Extract the script name or filepath
+                    if len(proc.info['cmdline']) > 1:
+                        script_path = proc.info['cmdline'][1]
+                        script_name = os.path.basename(script_path)  # Extract only the file name
+                    else:
+                        script_name = "Unknown script"
 
-                if not rstudio_process:
-                    send_slack_notification("RStudio is not running.", usersWebhook)
-                    output_text_box.config(state=tk.NORMAL)
-                    output_text_box.delete(1.0, 5.0) # clear oldest message
-                    
-                    output_text_box.insert(tk.END, "RStudio is not running.\n")
-                    ##output_text_box.config(state=tk.DISABLED)
-                    print("RStudio is not running.")
-                    # Wait for a while before checking again
-
-                    time.sleep(60)  # Check every 60 seconds
-                    continue
-
-                # Monitor child processes of RStudio
-                for child in rstudio_process.children(recursive=True):
-                    if child.pid not in monitored_processes and 'rscript' in child.name().lower():
-                        monitored_processes[child.pid] = child
+                    if proc.info['pid'] not in monitored_processes:
+                        monitored_processes[proc.info['pid']] = {
+                            "process": proc,
+                            "script_name": script_name
+                        }
                         send_slack_notification(
-                            f"Started monitoring Rscript process: {child.name()} (PID: {child.pid})",
-                            usersWebhook
-                        )
-                        print(f"Started monitoring Rscript process: {child.name()} (PID: {child.pid})")
-                        output_text_box.delete(1.0, 5.0) # clear oldest message
-                        output_text_box.config(state=tk.NORMAL)
-                        output_text_box.insert(tk.END, f"Started monitoring Rscript process: {child.name()} (PID: {child.pid})\n")
-                        ##output_text_box.config(state=tk.DISABLED)
-
-            else:
-                # Monitor the specified process directly
-                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                    if proc.info['name'] and process_name.lower() in proc.info['name'].lower():
-                        script_name = " ".join(proc.info['cmdline'][1:]) if len(proc.info['cmdline']) > 1 else "Unknown script"
-                        if proc.info['pid'] not in monitored_processes:
-                            monitored_processes[proc.info['pid']] = {
-                                "process": proc,
-                                "script_name": script_name
-                            }
-                            send_slack_notification(
-                                f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
-                                f"Script: {script_name}",
-                                usersWebhook
-                            )
-                            print(
-                                f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
-                                f"Script: {script_name}"
-                            )
-                            output_text_box.delete(1.0, 5.0) # clear oldest message
-                            # Update the text box with the new process information
-                            output_text_box.config(state=tk.NORMAL)
-                            output_text_box.insert(tk.END, f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
-                                f"Script: {script_name}\n")
-                            ##output_text_box.config(state=tk.DISABLED)
-
-            # Check if any monitored processes have finished
-            finished_pids = []
-            for pid, proc_info in monitored_processes.items():
-                if isinstance(proc_info, psutil.Process):  # For RStudio child processes
-                    proc = proc_info
-                    if not psutil.pid_exists(pid):
-                        send_slack_notification(f"Rscript process (PID: {pid}) has finished.", usersWebhook)
-                        print(f"Rscript process (PID: {pid}) has finished.")
-                        output_text_box.delete(1.0, 5.0) # clear oldest message
-
-                        output_text_box.config(state=tk.NORMAL)
-                        output_text_box.insert(tk.END, f"Rscript process (PID: {pid}) has finished.\n")
-                        ##output_text_box.config(state=tk.DISABLED)
-                        finished_pids.append(pid)
-                else:  # For directly monitored processes
-                    proc = proc_info["process"]
-                    script_name = proc_info["script_name"]
-                    if not psutil.pid_exists(pid):
-                        try:
-                            exit_code = proc.wait(timeout=1)
-                            status = "gracefully" if exit_code == 0 or 'None' else f"with error code {exit_code}"
-                        except psutil.TimeoutExpired:
-                            status = "with an unknown status (timeout while waiting for exit code)"
-
-                        send_slack_notification(
-                            f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
+                            f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
                             f"Script: {script_name}",
                             usersWebhook
                         )
                         print(
-                            f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
+                            f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
                             f"Script: {script_name}"
                         )
-                        output_text_box.delete(1.0, 5.0) # clear oldest message
-                        output_text_box.config(state=tk.NORMAL)
-                        output_text_box.insert(tk.END, f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
-                            f"Script: {script_name}\n")
-                        ##output_text_box.config(state=tk.DISABLED)
-                        finished_pids.append(pid)
+                        # Update the GUI text box
+                        output_text_box.delete(1.0, 5.0)  # Clear oldest message
+                        output_text_box.config(state=tk.NORMAL)  # Make it editable
+                        output_text_box.insert(tk.END, f"Started monitoring process: {proc.info['name']} (PID: {proc.info['pid']})\n"
+                                                       f"Script: {script_name}\n")
+
+            
+
+            # Check if any monitored processes have finished
+            finished_pids = []
+            for pid, proc_info in monitored_processes.items():
+                proc = proc_info["process"]
+                script_name = proc_info["script_name"]
+                if not psutil.pid_exists(pid):
+                    try:
+                        # Check if the process finished gracefully or errored out
+                        exit_code = proc.wait(timeout=1)  # Wait for the process to terminate
+                        status = "gracefully" if exit_code == 0 or 'None' else f"with error code {exit_code}"
+                    except psutil.TimeoutExpired:
+                        status = "with an unknown status (timeout while waiting for exit code)"
+
+                    send_slack_notification(
+                        f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
+                        f"Script: {script_name}",
+                        usersWebhook
+                    )
+                    print(
+                        f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
+                        f"Script: {script_name}"
+                    )
+                    # Update the GUI text box
+                    output_text_box.delete(1.0, 5.0) # clear oldest message // i dont think i want to clear here so user can see the history
+                    output_text_box.config(state=tk.NORMAL)  # Make it editable
+                    output_text_box.insert(tk.END, f"Process '{proc.info['name']}' (PID: {pid}) has finished {status}.\n"
+                        f"Script: {script_name}\n")
+                    finished_pids.append(pid)
+                    
+                    
 
             # Remove finished processes from the monitored list
             for pid in finished_pids:
@@ -140,7 +101,7 @@ def monitor_process(process_name, usersWebhook, output_text_box):
 
             time.sleep(2)  # Check every 2 seconds
     except Exception as e:
-        send_slack_notification(f"Error while monitoring process: {e}", usersWebhook)
+        send_slack_notification(usersWebhook,f"Error while monitoring process: {e}")
         print(f"Error while monitoring process: {e}")
 
 def start_process_monitoring(process_name, webhook, output_text_box):
@@ -156,13 +117,20 @@ def start_process_monitoring(process_name, webhook, output_text_box):
     if not webhook.startswith("https://hooks.slack.com/triggers/"):
         messagebox.showerror("Error", "Invalid Slack webhook URL!")
         return
-    # Validate the process name
-    if not process_name.isalnum():
-        messagebox.showerror("Error", "Invalid process name! Only alphanumeric characters are allowed.")
-        return
+    
 
     # Run the process monitoring in a separate thread to avoid blocking the GUI
     threading.Thread(target=monitor_process, args=(process_name, webhook,output_text_box), daemon=True).start()
+
+     # Update the GUI text box
+    output_text_box.config(state=tk.NORMAL)  # Make it editable
+    output_text_box.delete(1.0, 5.0)  # Clear oldest message
+    
+    output_text_box.insert(tk.END, f"Looking for active {process_name} sessions... \n")
+                                                     
+
+
+
 
 
 def save_config(process_name, webhook):
@@ -186,7 +154,7 @@ def load_config():
 def create_gui():
     """Create the tkinter GUI."""
     root = tk.Tk()
-    root.title("Remote Console Log")
+    root.title("Remote Console Log || Created by Zach End")
 
     config = load_config()
 
@@ -205,7 +173,7 @@ def create_gui():
     # Create a text box
     output_text_box = tk.Text(root, height=5, width=50, wrap="word")
     output_text_box.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
-    output_text_box.insert(tk.END, "Slack updates will also be displayed here...")
+    output_text_box.insert(tk.END, "Updates sent to slack will be displayed here...")
     output_text_box.config(state=tk.DISABLED)  # Make it read-only
     
 
